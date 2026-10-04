@@ -29,19 +29,40 @@ from ast_nodes import (
     PrintStmt,
     StringLiteral,
     ReturnStmt,
+    CallStmt,
+)
+from semantic_errors import (
+    SemanticDiagnostic,
+    SemanticError,
+    SemanticErrorKind,
 )
 
-
 def check_types(program: Program) -> None:
+    diagnostics = []
     for function in program.functions: #pega cada funcao do program
         for parameter in function.parameters: #pega paraemtro daquela funcao
             if parameter.type is TypeName.VOID: # paramentro so pode ser int ou bool, void n aceita
-                return None #error
-        check_block(function.body, function.return_type) #passa comandos da funcao e o tipo que a funcao deve retornar
+                diagnostics.append(SemanticDiagnostic #vai guardar o erro e continuar analisando o resto
+                (SemanticErrorKind.VOID_PARAMETER,"parametro não pode ser void",parameter.span,))
+        check_block(function.body, function.return_type, diagnostics) #passa comandos da funcao e o tipo que a funcao deve retornar
+    if diagnostics:
+        raise SemanticError(diagnostics)
 
+def check_call(call, diagnostics):
+    symbol = call.metadata["symbol"]
+    if len(call.arguments) != len(symbol.parameter_types):
+        return None
+    for i in range(len(call.arguments)):
+        argument = call.arguments[i]
+        parameter_type = symbol.parameter_types[i]
+        argument_type = check_expr(argument, diagnostics)
+        if argument_type is not parameter_type:
+            return None
 
+    call.metadata["type"] = symbol.type
+    return symbol.type
 
-def check_expr(expr: Expr): #qual o tipo da expressao
+def check_expr(expr: Expr, diagnostics): #qual o tipo da expressao
     if isinstance(expr, IntLiteral): #vai pegar inteiro
         if(expr.value > 2**63 - 1):
             return #erro
@@ -59,7 +80,7 @@ def check_expr(expr: Expr): #qual o tipo da expressao
         return symbol.type 
 
     if isinstance(expr, UnaryExpr): #ve c é uma expressao unaria
-        operand_type = check_expr(expr.operand) #vai pegar o operando, (- ou !), se for -, sabemos que é int, se for ! é bool
+        operand_type = check_expr(expr.operand, diagnostics) #vai pegar o operando, (- ou !), se for -, sabemos que é int, se for ! é bool
         if expr.operator is UnaryOperator.NEGATE: #v c é -, e se é um inteiro, só funciona com inteiros
             if operand_type != TypeName.INT:
                 return None #retornar erro c n for int
@@ -73,8 +94,8 @@ def check_expr(expr: Expr): #qual o tipo da expressao
             return TypeName.BOOL
 
     if isinstance(expr, BinaryExpr): #expressao possui dois lados e um op binario
-        left_type = check_expr(expr.left) #pegamos lado esquerdo
-        right_type = check_expr(expr.right) #pegamos lado direito
+        left_type = check_expr(expr.left, diagnostics) #pegamos lado esquerdo
+        right_type = check_expr(expr.right, diagnostics) #pegamos lado direito
 
         if expr.operator in { #v c o operador pertence
             BinaryOperator.ADD,
@@ -121,57 +142,70 @@ def check_expr(expr: Expr): #qual o tipo da expressao
             return TypeName.BOOL #
 
     if isinstance(expr, CallExpr): #funcao
-        symbol = expr.metadata["symbol"] #pega o simbolo 
-        if len(expr.arguments) != len(symbol.parameter_types): # v c o parametro é igual ao definido
+        call_type = check_call(expr, diagnostics)
+        if call_type is TypeName.VOID: #se a chamada da funcao esta sendo usada como um valor , ela n pode ser void
+            diagnostics.append(SemanticDiagnostic(
+            SemanticErrorKind.VOID_VALUE_USED,
+            "valor void não pode ser usado como expressão",
+            expr.span,
+            ))
             return None
-        for i in range(len(expr.arguments)): #pegar os parametros
-            argument = expr.arguments[i] #salva em argument
-            parameter_type = symbol.parameter_types[i] #salva o tipo que o paramentro deve ser
-            argument_type = check_expr(argument) #verifica o tipo e colcoa nametype em arguemnt_type
-            if argument_type is not parameter_type: #compara c o paramentro passado é igual ao tipo que deve ser 
-                return None
-            
-        expr.metadata["type"] = symbol.type
-        return symbol.type
+        return call_type
+        # symbol = expr.metadata["symbol"] #pega o simbolo 
+        # if len(expr.arguments) != len(symbol.parameter_types): # v c o parametro é igual ao definido
+        #     return None
+        # for i in range(len(expr.arguments)): #pegar os parametros
+        #     argument = expr.arguments[i] #salva em argument
+        #     parameter_type = symbol.parameter_types[i] #salva o tipo que o paramentro deve ser
+        #     argument_type = check_expr(argument) #verifica o tipo e colcoa nametype em arguemnt_type
+        #     if argument_type is not parameter_type: #compara c o paramentro passado é igual ao tipo que deve ser 
+        #         return None
+     
+        # expr.metadata["type"] = symbol.type
+        # return symbol.type
 
-def check_statement(stmt,  return_type):
+def check_statement(stmt,  return_type, diagnostics):
     if isinstance(stmt, VarDecl):  # variavel declarada com uma atribuicao 
         if stmt.type is TypeName.VOID: #variavel nm pode ser do tipo void
-            return None
-        
+            diagnostics.append(SemanticDiagnostic(
+                SemanticErrorKind.VOID_VARIABLE,
+                "variável não pode ser do tipo void",
+                stmt.span,
+                )
+            )
         if stmt.initializer is not None: #v c recebeu um valor incial, c recebeu 
-            initializer_type = check_expr(stmt.initializer) #c recebeu um valor, descobre o tipo que ta incializando a variavel
+            initializer_type = check_expr(stmt.initializer, diagnostics) #c recebeu um valor, descobre o tipo que ta incializando a variavel
             if initializer_type is not stmt.type: # se for diferente , ta errado
                 return None
     if isinstance(stmt, Assignment): #quando atribui um valor para um varaivael ja declarada ex: x = 10
-        target_type = check_expr(stmt.target) #identificador
-        value_type = check_expr(stmt.value) #pega o tipo do valor que vai colocar no identificador
+        target_type = check_expr(stmt.target, diagnostics) #identificador
+        value_type = check_expr(stmt.value, diagnostics) #pega o tipo do valor que vai colocar no identificador
         if target_type is not value_type: # c n for igual, error
             return None
 
     if isinstance(stmt, IfStmt): #if
-        condition_type = check_expr(stmt.condition) #pega a condicao e verifica c o tipo vai dar bool
+        condition_type = check_expr(stmt.condition, diagnostics) #pega a condicao e verifica c o tipo vai dar bool
         if condition_type is not TypeName.BOOL: # v c a condicao é bool, if so aceita bool
             return None
         
-        check_block(stmt.then_block)
+        check_block(stmt.then_block, return_type, diagnostics)
         if stmt.else_block is not None:
-            check_block(stmt.else_block,  return_type)
+            check_block(stmt.else_block,  return_type, diagnostics)
 
     if isinstance(stmt, WhileStmt): #while (mesma logica do if)
-        condition_type = check_expr(stmt.condition)
+        condition_type = check_expr(stmt.condition,diagnostics)
         if condition_type is not TypeName.BOOL:
             return None
-        check_block(stmt.body, return_type) # v os comadnos do while
+        check_block(stmt.body, return_type, diagnostics) # v os comadnos do while
 
     if isinstance(stmt, CallStmt):
-        check_expr(stmt.call)
+        check_call(stmt.call, diagnostics)
 
     if isinstance(stmt, PrintStmt):
         for item in stmt.items: #vai ver todos os termos
             if isinstance(item, StringLiteral): # "......."
                 continue
-            item_type = check_expr(item) # c n for string, v o tipo
+            item_type = check_expr(item, diagnostics) # c n for string, v o tipo
             if item_type is not TypeName.INT and item_type is not TypeName.BOOL: # e aceita somente int ou bool
                 return None
 
@@ -180,12 +214,12 @@ def check_statement(stmt,  return_type):
             if return_type is not TypeName.VOID: #v c a funcao esta pedindo retorno void, c n, erro
                 return None
         else:
-            value_type = check_expr(stmt.value) #tipo da expressao retornada
+            value_type = check_expr(stmt.value, diagnostics) #tipo da expressao retornada
             if value_type is not return_type: #v c é igual ao pedido, c n for, erro
                 return None
-def check_block(block: Block,  return_type):
+def check_block(block: Block,  return_type, diagnostics):
     for stmt in block.statements:
-        check_statement(stmt,  return_type)
+        check_statement(stmt,  return_type, diagnostics)
 """Sabemos pela propria AST que IntLiteral é int e BoolLiteral é bool, mas usamos 
 check_expr() para transformar todas as expressões em uma forma padronizada de obter seu tipo. 
 fazemos isso mais por causa dos identificadores,pq o tipo n vem da AST ele fica no símbolo resolvido anteriormente. 
