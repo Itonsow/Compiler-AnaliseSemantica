@@ -8,13 +8,20 @@ from __future__ import annotations
     # 3. Valide operadores, chamadas, comandos e declarações.
     # 4. Anote expressões válidas e acumule os diagnósticos da passagem.
 
-from ast_nodes import ( #classes AST
+from ast_nodes import (
     Program,
     Expr,
     IntLiteral,
     BoolLiteral,
     IdentifierExpr,
     TypeName,
+    UnaryExpr,
+    UnaryOperator,
+    BinaryExpr,
+    BinaryOperator,
+    CallExpr,
+    VarDecl,
+    Block,
 )
 
 
@@ -47,11 +54,11 @@ def check_expr(expr: Expr): #qual o tipo da expressao
             expr.metadata["type"] = TypeName.INT
             return TypeName.INT
 
-    if expr.operator is UnaryOperator.NOT: #v c é ! 
-        if operand_type is not TypeName.BOOL: #c o tipo n for bool é erro
-            return #error
-        expr.metadata["type"] = TypeName.BOOL
-        return TypeName.BOOL
+        if expr.operator is UnaryOperator.NOT: #v c é ! 
+            if operand_type is not TypeName.BOOL: #c o tipo n for bool é erro
+                return #error
+            expr.metadata["type"] = TypeName.BOOL
+            return TypeName.BOOL
 
     if isinstance(expr, BinaryExpr): #expressao possui dois lados e um op binario
         left_type = check_expr(expr.left) #pegamos lado esquerdo
@@ -69,6 +76,64 @@ def check_expr(expr: Expr): #qual o tipo da expressao
             expr.metadata["type"] = TypeName.INT
             return TypeName.INT
 
+        if expr.operator in { #v c é == ou != , vai ter que dar bool no fim 
+            BinaryOperator.EQUAL,
+            BinaryOperator.NOT_EQUAL,
+            }:
+            if left_type is not right_type: #c n for do mesmo tipo, da erro
+                return None
+
+            expr.metadata["type"] = TypeName.BOOL
+            return TypeName.BOOL
+
+
+        if expr.operator in {
+            BinaryOperator.LESS,
+            BinaryOperator.LESS_EQUAL,
+            BinaryOperator.GREATER,
+            BinaryOperator.GREATER_EQUAL
+            }:
+
+            if left_type is not TypeName.INT or right_type is not TypeName.INT: #precisa ser int , int para aceitar e retornar bool
+                return None
+            expr.metadata["type"] = TypeName.BOOL
+            return TypeName.BOOL
+
+        if expr.operator in {  # && ou ||
+            BinaryOperator.LOGICAL_AND, 
+            BinaryOperator.LOGICAL_OR,
+        }:
+            if left_type is not TypeName.BOOL or right_type is not TypeName.BOOL: #ambos os lados precisar ser bool e volta bool
+                return None
+            expr.metadata["type"] = TypeName.BOOL
+            return TypeName.BOOL #
+
+    if isinstance(expr, CallExpr): #funcao
+        symbol = expr.metadata["symbol"] #pega o simbolo 
+        if len(expr.arguments) != len(symbol.parameter_types): # v c o parametro é igual ao definido
+            return None
+        for i in range(len(expr.arguments)): #pegar os parametros
+            argument = expr.arguments[i] #salva em argument
+            parameter_type = symbol.parameter_types[i] #salva o tipo que o paramentro deve ser
+            argument_type = check_expr(argument) #verifica o tipo e colcoa nametype em arguemnt_type
+            if argument_type is not parameter_type: #compara c o paramentro passado é igual ao tipo que deve ser 
+                return None
+            
+        expr.metadata["type"] = symbol.type
+        return symbol.type
+
+def check_statement(stmt):
+    if isinstance(stmt, VarDecl):  # variavel declarada com uma atribuicao 
+        if stmt.initializer is not None: #v c recebeu um valor incial, c recebeu 
+            initializer_type = check_expr(stmt.initializer) #c recebeu um valor, descobre o tipo que ta incializando a variavel
+            if initializer_type is not stmt.type: # se for diferente , ta errado
+                return None
+    if isinstance(stmt, Assignment): #quando atribui um valor para um varaivael ja declarada ex: x = 10
+        target_type = check_expr(stmt.target) #identificador
+        value_type = check_expr(stmt.value) #pega o tipo do valor que vai colocar no identificador
+        if target_type is not value_type: # c n for igual, error
+            return None
+            
 """Sabemos pela propria AST que IntLiteral é int e BoolLiteral é bool, mas usamos 
 check_expr() para transformar todas as expressões em uma forma padronizada de obter seu tipo. 
 fazemos isso mais por causa dos identificadores,pq o tipo n vem da AST ele fica no símbolo resolvido anteriormente. 
