@@ -22,6 +22,9 @@ from ast_nodes import (
     CallExpr,
     VarDecl,
     Block,
+    Assignment,
+    WhileStmt,
+    IfStmt,
 )
 
 
@@ -133,7 +136,26 @@ def check_statement(stmt):
         value_type = check_expr(stmt.value) #pega o tipo do valor que vai colocar no identificador
         if target_type is not value_type: # c n for igual, error
             return None
-            
+
+    if isinstance(stmt, IfStmt): #if
+        condition_type = check_expr(stmt.condition) #pega a condicao e verifica c o tipo vai dar bool
+        if condition_type is not TypeName.BOOL: # v c a condicao é bool, if so aceita bool
+            return None
+        
+        check_block(stmt.then_block)
+        if stmt.else_block is not None:
+            check_block(stmt.else_block)
+
+    if isinstance(stmt, WhileStmt): #while (mesma logica do if)
+        condition_type = check_expr(stmt.condition)
+        if condition_type is not TypeName.BOOL:
+            return None
+
+        check_block(stmt.body) # v os comadnos do while
+        
+def check_block(block: Block):
+    for stmt in block.statements:
+        check_statement(stmt)
 """Sabemos pela propria AST que IntLiteral é int e BoolLiteral é bool, mas usamos 
 check_expr() para transformar todas as expressões em uma forma padronizada de obter seu tipo. 
 fazemos isso mais por causa dos identificadores,pq o tipo n vem da AST ele fica no símbolo resolvido anteriormente. 
