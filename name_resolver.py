@@ -27,10 +27,10 @@ class ResolvedorNomes:
 
     def resolver(self, programa): # funcao principal do resolvedor de nomes. ela chama as funcoes q vao percorrer a arvore e registrar os simbolos, escopos e nomes usados
         # pega todas as funcoes do programa e registra elas na tabela de simbolos de funcoes
-        self.registrar_funcoes(programa)
+        self.registrar_funcoes(programa) #registra primeiro as funcoes e dps analisa o corpo da funcao
 
         # veficia se existe uma funcao main valida
-        self.validar_main(programa)
+        self.validar_main(programa) #precisa ser exatamente um return : int ; e nenhuma paramentro
 
         # percorre todas as funcao do programa. verifica os parametros, os escopos e os nomes usados dentro de cada funcao
         for funcao in programa.functions:
