@@ -25,12 +25,21 @@ from ast_nodes import (
     Assignment,
     WhileStmt,
     IfStmt,
+    CallStmt,
+    PrintStmt,
+    StringLiteral,
+    ReturnStmt,
 )
 
 
 def check_types(program: Program) -> None:
-    """Determine tipos de expressões e valide seus contextos."""
-    pass
+    for function in program.functions: #pega cada funcao do program
+        for parameter in function.parameters: #pega paraemtro daquela funcao
+            if parameter.type is TypeName.VOID: # paramentro so pode ser int ou bool, void n aceita
+                return None #error
+        check_block(function.body, function.return_type) #passa comandos da funcao e o tipo que a funcao deve retornar
+
+
 
 def check_expr(expr: Expr): #qual o tipo da expressao
     if isinstance(expr, IntLiteral): #vai pegar inteiro
@@ -125,8 +134,11 @@ def check_expr(expr: Expr): #qual o tipo da expressao
         expr.metadata["type"] = symbol.type
         return symbol.type
 
-def check_statement(stmt):
+def check_statement(stmt,  return_type):
     if isinstance(stmt, VarDecl):  # variavel declarada com uma atribuicao 
+        if stmt.type is TypeName.VOID: #variavel nm pode ser do tipo void
+            return None
+        
         if stmt.initializer is not None: #v c recebeu um valor incial, c recebeu 
             initializer_type = check_expr(stmt.initializer) #c recebeu um valor, descobre o tipo que ta incializando a variavel
             if initializer_type is not stmt.type: # se for diferente , ta errado
@@ -144,18 +156,36 @@ def check_statement(stmt):
         
         check_block(stmt.then_block)
         if stmt.else_block is not None:
-            check_block(stmt.else_block)
+            check_block(stmt.else_block,  return_type)
 
     if isinstance(stmt, WhileStmt): #while (mesma logica do if)
         condition_type = check_expr(stmt.condition)
         if condition_type is not TypeName.BOOL:
             return None
+        check_block(stmt.body, return_type) # v os comadnos do while
 
-        check_block(stmt.body) # v os comadnos do while
-        
-def check_block(block: Block):
+    if isinstance(stmt, CallStmt):
+        check_expr(stmt.call)
+
+    if isinstance(stmt, PrintStmt):
+        for item in stmt.items: #vai ver todos os termos
+            if isinstance(item, StringLiteral): # "......."
+                continue
+            item_type = check_expr(item) # c n for string, v o tipo
+            if item_type is not TypeName.INT and item_type is not TypeName.BOOL: # e aceita somente int ou bool
+                return None
+
+    if isinstance(stmt, ReturnStmt): # v c é um return
+        if stmt.value is None: # se for somente return
+            if return_type is not TypeName.VOID: #v c a funcao esta pedindo retorno void, c n, erro
+                return None
+        else:
+            value_type = check_expr(stmt.value) #tipo da expressao retornada
+            if value_type is not return_type: #v c é igual ao pedido, c n for, erro
+                return None
+def check_block(block: Block,  return_type):
     for stmt in block.statements:
-        check_statement(stmt)
+        check_statement(stmt,  return_type)
 """Sabemos pela propria AST que IntLiteral é int e BoolLiteral é bool, mas usamos 
 check_expr() para transformar todas as expressões em uma forma padronizada de obter seu tipo. 
 fazemos isso mais por causa dos identificadores,pq o tipo n vem da AST ele fica no símbolo resolvido anteriormente. 
