@@ -65,7 +65,7 @@ def check_expr(expr: Expr): #qual o tipo da expressao
             BinaryOperator.REMAINDER,
         }:
             if left_type is not TypeName.INT or right_type is not TypeName.INT:  
-                return #error
+                return #errorS
             expr.metadata["type"] = TypeName.INT
             return TypeName.INT
 
